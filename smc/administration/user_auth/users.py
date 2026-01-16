@@ -193,6 +193,7 @@ class ExternalLdapUserDomain(Browseable, Element):
             auth_method=None,
             comment=None,
             browse_ldap_automatically=True,
+            engine_can_connect=True,
             additional_username_suffix=None
     ):
         """
@@ -210,8 +211,9 @@ class ExternalLdapUserDomain(Browseable, Element):
             use. Usually set when multiple are defined in LDAP service or
             none are defined.
         :param str comment: optional comment
-        :param bool browse_ldap_automatically: set to False if this domain is not browsed automatically by SMC
+        :param bool browse_ldap_automatically: set to False if SMC doesn't connect to the external directory server to browse users and groups
         to retrieve users.
+        :param bool engine_can_connect: set to False if engines don't connect to the external directory server to resolve users and groups.
         :param list(dict) additional_username_suffix: list of dicts of suffixes
          eg. [{name: example.com},...]
         :raises CreateElementFailed: failed to create
@@ -227,6 +229,9 @@ class ExternalLdapUserDomain(Browseable, Element):
         # browse_ldap_automatically default value is True. Set it only if different.
         if not browse_ldap_automatically and is_smc_version_more_than_or_equal("7.3"):
             json.update(browse_ldap_automatically=browse_ldap_automatically)
+        # engine_can_connect default value is True. Set it only if different and if SMC supports it.
+        if not engine_can_connect and is_smc_version_more_than_or_equal("7.4"):
+            json.update(engine_can_connect=engine_can_connect)
         # UPN feature Add additional_username_suffix only if SMC version >= 7.4.0 and value is provided
         if (
                 additional_username_suffix is not None
@@ -300,9 +305,9 @@ class LdapUser(UserElement):
         You can also provide additional kwargs documented in the example below.
         Example::
 
-            LdapUserGroup.create(dn='ou=group1,dc=test,dc=forcepoint,dc=com',name='group1', comment='my comment')
+            LdapUser.create(dn='cn=user1,dc=test,dc=forcepoint,dc=com',name='user1', comment='my comment')
 
-        :param str dn: full DN of user group. Parent group must exist.
+        :param str dn: full DN of user. Parent group must exist.
         :param ExternalLdapUserDomain ldap_domain: the user_domain where this group is created.
         :rtype: LdapUser
         """
@@ -345,6 +350,77 @@ class LdapUserGroup(Browseable, UserElement):
         json = {
             "user_domain": ldap_domain.href,
             "unique_id": "{},domain={}".format(dn, ldap_domain.name),
+        }
+        json.update(kwargs)
+
+        return ElementCreator(cls, json)
+
+
+class LdapLessUser(UserElement):
+    """
+    This represents an LDAP User defined on a domain where
+    SMC and engine don't connect to the external LDAP server. So the user is defined inside SMC, to match element in LDAP.
+
+    :ivar str name: name of ldap user
+    """
+
+    typeof = "ldapless_user"
+
+    @classmethod
+    def create(
+            cls, ldap_domain: Browseable, name: str, **kwargs
+    ):
+        """
+        Create an LDAP user for a domain where
+        SMC and engine don't connect to the external LDAP server.
+        You can also provide additional kwargs documented in the example below.
+        Example::
+
+            LdapLessUser.create(name='group1', comment='my comment')
+
+        :param str name: name of the user
+        :param ExternalLdapUserDomain ldap_domain: the user_domain where this group is created.
+        :rtype: LdapLessUser
+        """
+        json = {
+            "user_domain": ldap_domain.href,
+            "unique_id": "name={},domain={}".format(name, ldap_domain.name),
+        }
+        json.update(kwargs)
+
+        return ElementCreator(cls, json)
+
+
+class LdapLessUserGroup(Browseable, UserElement):
+    """
+    This represents an LDAP User Group defined on an external LDAP server that
+    SMC doesn't browse. So the user group is defined inside SMC, to match element in LDAP.
+
+    :ivar str name: name of ldap user group
+    :ivar str unique_id: the fully qualified DN for the user group
+    """
+
+    typeof = "ldapless_user_group"
+
+    @classmethod
+    def create(
+            cls, ldap_domain: Browseable, name: str, **kwargs
+    ):
+        """
+        Create an LDAP user group for for a domain where
+        SMC and engine don't connect to the external LDAP server.
+        You can also provide additional kwargs documented in the example below.
+        Example::
+
+            LdapLessUserGroup.create(dn='ou=group1,dc=test,dc=forcepoint,dc=com',name='group1', comment='my comment')
+
+        :param str name: name of user group.
+        :param ExternalLdapUserDomain ldap_domain: the user_domain where this group is created.
+        :rtype: LdapLessUserGroup
+        """
+        json = {
+            "user_domain": ldap_domain.href,
+            "unique_id": "name={},domain={}".format(name, ldap_domain.name),
         }
         json.update(kwargs)
 

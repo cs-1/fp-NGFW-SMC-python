@@ -2723,7 +2723,9 @@ class SamlSettings(NestedDict):
                saml_tls_credentials_ref=None,
                saml_name_id_policy_format=None,
                saml_user_attribute=None,
-               saml_user_name_attr=None,
+               saml_metadata_file=None,
+               saml_acs_url=None,
+
                ):
         """
         :param AuthenticationMethod saml_method_ref: the SAML Method
@@ -2735,7 +2737,8 @@ class SamlSettings(NestedDict):
         - emailAddress
         - unspecified.
         :param str saml_user_attribute: the SAML User Attribute.
-        :param str saml_user_name_attr: The LDAP user name attribute for SAML.
+        :param str saml_metadata_file: SAML Settings specific metadata to override the one defined in SAML Method.
+        :param str saml_acs_url: SAML Assertion Consumer Service URL.
         """
         saml_settings_data = {
             "saml_method_ref": element_resolver(saml_method_ref),
@@ -2743,7 +2746,8 @@ class SamlSettings(NestedDict):
             "saml_tls_credentials_ref": element_resolver(saml_tls_credentials_ref),
             "saml_name_id_policy_format": saml_name_id_policy_format,
             "saml_user_attribute": saml_user_attribute,
-            "saml_user_name_attr": saml_user_name_attr
+            "saml_metadata_file": saml_metadata_file,
+            "saml_acs_url": saml_acs_url,
         }
         return cls(saml_settings_data)
 
@@ -2797,8 +2801,15 @@ class SamlSettings(NestedDict):
         return self.data.get("saml_user_attribute")
 
     @property
-    def user_name_attr(self):
+    def metadata_file(self):
         """
-        Return the LDAP user name attribute for SAML.
+        Return the SAML Settings specific metadata.
         """
-        return self.data.get("saml_user_name_attr")
+        return self.data.get("saml_metadata_file")
+
+    @property
+    def acs_url(self):
+        """
+        Return the SAML Assertion Consumer Service URL.
+        """
+        return self.data.get("saml_acs_url")

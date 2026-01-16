@@ -94,11 +94,12 @@ class AuthenticationMethod(Element):
             cls,
             name,
             idp_metadata_url,
-            service_provider_id,
+            service_provider_id=None,
             name_id_policy_format=None,
             username_attribute=None,
             tls_profile=None,
             tls_credentials=None,
+            group_attr_names=None,
             **kwargs
     ):
         """
@@ -111,7 +112,8 @@ class AuthenticationMethod(Element):
                 name_id_policy_format='EmailAddress'
                 username_attribute='preferred_username'
                 tls_profile='My TLS Profile',
-                tls_credentials='My TLS Credentials')
+                tls_credentials='My TLS Credentials',
+                group_attr_names=['group_attr_name1'])
 
                 :param str name: name of AD element for display
                 :param str idp_metadata_url: Identity Provider Metadata URL
@@ -123,6 +125,7 @@ class AuthenticationMethod(Element):
                                         Used during communication with IdP
                 :param str tls_credentials: tls_credentials by element of str href.
                                        Used for decrypting SAML response and signing SAML requests
+                :param str group_attr_names: LDAP Group Attribute Names
                 :raises CreateElementFailed: failed creating element
                 :rtype: AuthenticationMethod
         """
@@ -142,6 +145,9 @@ class AuthenticationMethod(Element):
         if tls_profile:
             tls_profile_ref = tls.TLSProfile(tls_profile).href
             json.update(saml_tls_profile_ref=tls_profile_ref)
+
+        if group_attr_names and is_smc_version_more_than_or_equal("7.4.0"):
+            json.update(saml_group_attr_name=group_attr_names)
 
         json.update(kwargs)
         return ElementCreator(cls, json)
@@ -206,6 +212,29 @@ class AuthenticationMethod(Element):
                 "'saml_name_id_policy_format' attribute is now managed by the SAML settings from the SMC server.")
 
         self.data['saml_name_id_policy_format'] = saml_name_id_policy_format
+
+    @property
+    def saml_group_attr_names(self):
+        """
+        LDAP Group Attribute Names
+        :rtype: list(str)
+        """
+        if is_smc_version_less_than("7.4.0"):
+            raise UnsupportedAttribute(
+                "'saml_group_attr_name' attribute is supported only from version 7.4.X.")
+
+        return self.data.get('saml_group_attr_name')
+
+    @saml_group_attr_names.setter
+    def saml_group_attr_names(self, saml_group_attr_names):
+        """
+        Update LDAP Group Attribute Names
+        """
+        if is_smc_version_less_than("7.4.0"):
+            raise UnsupportedAttribute(
+                "'saml_group_attr_name' attribute is supported only from version 7.4.X.")
+
+        self.data['saml_group_attr_name'] = saml_group_attr_names
 
     @classmethod
     def create_openid(

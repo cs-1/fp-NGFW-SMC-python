@@ -315,6 +315,8 @@ class SMCResult(object):
 
             elif "text/plain" in content_type or "application/octet-stream" in content_type:
                 self.content = response.text if response.text else None
+            elif "application/zip" in content_type:
+                self.content = response.content
 
     def __str__(self):
         sb = []

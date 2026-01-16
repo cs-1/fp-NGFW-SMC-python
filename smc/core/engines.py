@@ -22,6 +22,7 @@ from smc.core.engine import Engine, HAForSingleEngine
 from smc.api.exceptions import CreateEngineFailed, CreateElementFailed, ElementNotFound
 from smc.base.model import ElementCreator
 from smc.compat import min_smc_version
+from smc.elements.servers import SamlSettings  # noqa
 
 
 class Layer3Firewall(Engine):
@@ -1554,6 +1555,47 @@ class FirewallCluster(Engine):
     def quic_enabled(self, value):
         if min_smc_version("7.0"):
             self.data["quic_enabled"] = value
+
+    @property
+    def saml_settings(self):
+        """
+        Represents the SAML settings.
+        :rtype: list(SamlSettings):
+        """
+        return [SamlSettings(s) for s in self.data.get("saml_settings", [])]
+
+    def get_saml_settings_from_usage(self, usage):
+        """
+        Get all SAML settings by usage type.
+
+        :param str usage: the usage type of SAML settings
+        :return: list of SamlSettings objects (can be empty)
+        :rtype: list[SamlSettings]
+        """
+        return [s for s in self.saml_settings if s.usage == usage]
+
+    def configure_saml_on_engine(self, usage, saml_settings_entries):
+        """
+        Configure SAML settings on a FW.
+       :param str usage: the usage type of SAML settings
+        :param list saml_settings_entries: the list of SAML Settings to configure.
+        If None, it will disable the SAML settings for the FW.
+        :return: None
+        """
+
+        new_saml_settings_entries = [s for s in self.data.get("saml_settings", []) if
+                                        s.get("usage") != usage]
+
+        if saml_settings_entries:
+            for saml_settings_entry in saml_settings_entries:
+                saml_settings_entry["saml_setting_usage"] = usage
+                new_saml_settings_entries.append(saml_settings_entry)
+
+        self.data["enable_saml_for_bba" if usage == "bba" else "enable_saml_for_application_access"] = (saml_settings_entries is not None
+                                                        and len(saml_settings_entries) > 0)
+        self.data["saml_settings"] = new_saml_settings_entries
+
+        self.update()
 
 
 class MasterEngine(Engine):

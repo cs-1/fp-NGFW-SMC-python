@@ -2328,6 +2328,75 @@ class Engine(Element):
         return self.vpn
 
     @property
+    def replica_internal_gateway(self):
+        """
+        Replica Internal Gateway for this engine. This property returns a list
+        of ReplicaInternalGateway objects. Replica gateways are linked to internal
+        gateways from other engines and are used in VPN configurations where one
+        engine replicates the gateway configuration of another.
+
+        :raises FetchElementFailed: Replica internal gateway not found
+        :return: list of ReplicaInternalGateway objects for this engine
+        :rtype: list(ReplicaInternalGateway)
+        """
+        return [ReplicaInternalGateway(**gw) for gw in self.make_request(resource="replica_internal_gateway")]
+
+    def create_replica_internal_gateway(self, name, linked_gateway, auto_site_content=True):
+        """
+        Create a replica internal gateway on this engine. A replica gateway is linked to
+        an internal gateway from another engine and is used in VPN configurations.
+
+        :param str name: Name for the replica internal gateway
+        :param linked_gateway: The internal gateway to link to. Can be an InternalGateway
+                              object, InternalEndpoint object, or an href string
+        :type linked_gateway: InternalGateway or str
+        :param bool auto_site_content: Whether site content should be automatically generated
+                                       from the routing view (default: True)
+        :raises ActionCommandFailed: When creation fails
+        :return: The created ReplicaInternalGateway
+        :rtype: ReplicaInternalGateway
+
+        Example::
+
+            >>> saint_paul_fw = Engine('Saint Paul')
+            >>> santa_clara_fw = Engine('Santa Clara')
+            >>> santa_clara_gw = santa_clara_fw.internal_gateway
+            >>> replica_gw = saint_paul_fw.create_replica_internal_gateway(
+            ...     name='Santa Clara Replica',
+            ...     linked_gateway=santa_clara_gw,
+            ...     auto_site_content=True
+            ... )
+            >>> print(replica_gw.name)
+            Santa Clara Replica
+        """
+        # Get the href from the linked_gateway object if it's not already a string
+        if hasattr(linked_gateway, 'href'):
+            linked_gateway_ref = linked_gateway.href
+        else:
+            linked_gateway_ref = linked_gateway
+
+        data = {
+            "name": name,
+            "linked_gateway_ref": linked_gateway_ref,
+            "auto_site_content": auto_site_content
+        }
+
+        result = self.make_request(
+            method="create",
+            resource="replica_internal_gateway",
+            json=data
+        )
+
+        if result:
+            return ReplicaInternalGateway(href=result.get('href', f"{self.href}/replica_internal_gateway"), data=result)
+
+        for gw in self.replica_internal_gateway:
+            if gw.name == name:
+                return gw
+
+        return None
+
+    @property
     def all_vpns(self):
         """
         Engine level all VPN gateway information.
@@ -3313,21 +3382,21 @@ class Engine(Element):
         """
         self._configure_saml_settings_for(saml_settings_entries, False)
 
-    def configure_saml_settings_for_sslvpn_portal(self, saml_settings_entries):
+    def configure_saml_settings_for_application_access(self, saml_settings_entries):
         """
-        Configure SAML settings for SSL VPN portal. If saml_settings
-        are defined, we enable the SAML for SSL VPN portal otherwise we disable it.
+        Configure SAML settings for Application Access portal. If saml_settings
+        are defined, we enable the SAML for Application Access portal otherwise we disable it.
         """
         self._configure_saml_settings_for(saml_settings_entries, True)
 
-    def _configure_saml_settings_for(self, saml_settings_entries, ssl_vpn):
+    def _configure_saml_settings_for(self, saml_settings_entries, application_access):
         """
-        Configure SAML settings for BBA (user authentication) or SSL VPN portal. If saml_settings
-        are defined, we enable the SAML otherwise we disable it.
+        Configure SAML settings for BBA (user authentication) or Application access portal.
+        If saml_settings are defined, we enable the SAML otherwise we disable it.
         """
-        if ssl_vpn:
-            enable_attribute = "enable_saml_for_ssl_vpn"
-            saml_usage = "ssl_vpn"
+        if application_access:
+            enable_attribute = "enable_saml_for_application_access"
+            saml_usage = "app_access"
         else:
             enable_attribute = "enable_saml_for_bba"
             saml_usage = "bba"
@@ -3342,6 +3411,37 @@ class Engine(Element):
                                        and len(saml_settings_entries) > 0)
         self.data["saml_settings"] = new_saml_settings_entries
 
+
+    def save_initial_configuration(self, time_zone, keyboard, enable_ssh=False,
+                             root_password=None, initial_policy_ref=None, install_on_server=False,
+                             export_to_base64=False):
+        """
+        Saves the initial configuration for all nodes of the cluster.
+
+        :param time_zone: Time zone to set on all nodes.
+        :param keyboard: Keyboard layout to set on all nodes.
+        :param bool enable_ssh: Enable SSH on all nodes.
+        :param str root_password: Root password to set on all nodes.
+        :param str initial_policy_ref: Reference to the initial policy to set on all nodes.
+        :param bool install_on_server: Whether to install on server.
+        :param bool export_to_base64: Whether to export to base64.
+        :return byte array of the zip containing configuration files for all nodes.
+        .. note:: This method requires SMC version >= 7.1
+        """
+        payload= {
+            "time_zone": time_zone,
+            "keyboard": keyboard,
+            "enable_ssh": enable_ssh,
+            "root_password": root_password,
+            "initial_policy_ref": initial_policy_ref,
+            "install_on_server": install_on_server,
+            "export_to_base64": export_to_base64
+        }
+        return self.make_request(
+            EngineCommandFailed, method="create", resource="save_initial_configuration",
+            json=payload,
+            raw_result=True
+        )
 
 class VPNMappingCollection(BaseIterable):
     def __init__(self, vpns):
@@ -3874,6 +3974,209 @@ class InternalEndpoint(SubElement):
         :rtype: PhysicalInterface
         """
         return PhysicalInterface(href=self.data.get("physical_interface"))
+
+
+class ReplicaInternalGateway(SubElement):
+    """
+    ReplicaInternalGateway represents a replica of an internal gateway from another
+    engine. This is used in VPN configurations where one engine needs to reference
+    the gateway configuration of another engine.
+
+    A replica internal gateway is linked to an actual internal gateway on a different
+    engine via the linked_gateway_ref property.
+
+    Example of accessing replica internal gateways::
+
+        >>> engine = Engine('myengine')
+        >>> for replica_gw in engine.replica_internal_gateway:
+        ...     print(replica_gw.name)
+        ...     print(replica_gw.linked_gateway)
+        ...
+
+    :ivar str name: Name of the replica internal gateway
+    :ivar str linked_gateway_ref: Reference to the original internal gateway
+    """
+
+    typeof = "replica_internal_gateway"
+
+    def rename(self, name):
+        """
+        Rename this replica internal gateway.
+
+        :param str name: new name for the replica gateway
+        :return: None
+        """
+        self._del_cache()  # Engine update changes this ETag
+        self.update(name=name)
+
+    def remove(self):
+        """
+        Remove this Replica Internal Gateway from the engine.
+
+        :return: None
+        """
+        self.delete()
+
+    @property
+    def linked_gateway(self):
+        """
+        The original internal gateway that this replica is linked to.
+        This gateway exists on a different engine.
+
+        :return: InternalGateway element
+        :rtype: InternalGateway
+        """
+        return Element.from_href(self.data.get("linked_gateway_ref"))
+
+    @property
+    def replica_internal_endpoint(self):
+        """
+        Replica internal endpoints associated with this replica gateway.
+
+        :rtype: SubElementCollection(ReplicaInternalEndpoint)
+        """
+        return sub_collection(
+            self.get_relation("replica_internal_endpoint"), ReplicaInternalEndpoint
+        )
+
+    @property
+    def vpn_site(self):
+        """
+        VPN sites associated with this replica internal gateway.
+
+        :rtype: CreateCollection(VPNSite)
+        """
+        return create_collection(self.get_relation("vpn_site"), VPNSite)
+
+    @property
+    def auto_site_content(self):
+        """
+        Indicates whether the site content is automatically generated
+        from the routing view.
+
+        :return: bool
+        """
+        return self.data.get("auto_site_content", False)
+
+    def create_replica_endpoint(self, linked_endpoint, interface_ip_address, name=None):
+        """
+        Create a replica internal endpoint on this replica gateway.
+
+        A replica endpoint links to an actual internal endpoint from the source gateway
+        and uses a local interface IP address from this engine.
+
+        :param linked_endpoint: The source internal endpoint to link to (from the original gateway).
+                               Can be an InternalEndpoint object or an href string.
+        :type linked_endpoint: InternalEndpoint or str
+        :param str interface_ip_address: The IP address of the local interface to use for this
+                                         replica endpoint
+        :param str name: Optional name for the replica endpoint. If not provided,
+                        defaults to the interface_ip_address
+        :raises ActionCommandFailed: When creation fails
+        :return: The created ReplicaInternalEndpoint
+        :rtype: ReplicaInternalEndpoint
+
+        Example::
+
+            >>> engine = Engine('plano')
+            >>> replica_gw = engine.replica_internal_gateway[0]
+            >>> source_endpoint = InternalEndpoint(href='http://...')  # From source gateway
+            >>> replica_endpoint = replica_gw.create_replica_endpoint(
+            ...     linked_endpoint=source_endpoint,
+            ...     interface_ip_address='192.168.1.1'
+            ... )
+            >>> print(replica_endpoint.name)
+            192.168.1.1
+        """
+        if hasattr(linked_endpoint, 'href'):
+            linked_endpoint_ref = linked_endpoint.href
+        else:
+            linked_endpoint_ref = linked_endpoint
+
+        if name is None:
+            name = interface_ip_address
+
+        data = {
+            "linked_endpoint_ref": linked_endpoint_ref,
+            "interface_ip_address": interface_ip_address,
+            "name": name
+        }
+
+        self.make_request(
+            method="create",
+            resource="replica_internal_endpoint",
+            json=data
+        )
+
+        for endpoint in self.replica_internal_endpoint:
+            if endpoint.interface_ip_address == interface_ip_address:
+                return endpoint
+
+        return ReplicaInternalEndpoint(href=f"{self.href}/replica_internal_endpoint", data=data)
+
+
+class ReplicaInternalEndpoint(SubElement):
+    """
+    A Replica Internal Endpoint is a copy of an internal endpoint from another
+    engine's internal gateway. This is used in VPN configurations where endpoints
+    from one engine need to be referenced by another engine.
+
+    Example::
+
+        >>> engine = Engine('myengine')
+        >>> replica_gw = engine.replica_internal_gateway[0]
+        >>> for endpoint in replica_gw.replica_internal_endpoint:
+        ...     print(endpoint.name)
+        ...     print(endpoint.interface_ip_address)
+        ...     print(endpoint.linked_endpoint)
+        ...
+
+    :ivar str interface_ip_address: IP address of the interface
+    :ivar str linked_endpoint_ref: Reference to the original internal endpoint
+    """
+
+    typeof = "replica_internal_endpoint"
+
+    @property
+    def name(self):
+        """
+        Get the name from deducted name
+
+        :return: endpoint name
+        :rtype: str
+        """
+        return self.data.get("deducted_name", self.data.get("name", ""))
+
+    @property
+    def interface_ip_address(self):
+        """
+        IP address of the interface for this replica endpoint.
+
+        :return: IP address
+        :rtype: str
+        """
+        return self.data.get("interface_ip_address")
+
+    @property
+    def linked_endpoint(self):
+        """
+        The original internal endpoint that this replica is linked to.
+        This endpoint exists on a different engine's internal gateway.
+
+        :return: InternalEndpoint element
+        :rtype: InternalEndpoint
+        """
+        return Element.from_href(self.data.get("linked_endpoint_ref"))
+
+    @property
+    def linked_endpoint_ref(self):
+        """
+        Reference (href) to the original internal endpoint.
+
+        :return: href to the linked endpoint
+        :rtype: str
+        """
+        return self.data.get("linked_endpoint_ref")
 
 
 class VirtualResource(SubElement):
@@ -4910,7 +5213,7 @@ class DHCPClientConfiguration(NestedDict):
         :param str restricted_address_list: Only usefull if the restricted_address_enabled flag is set to true.
         the value can come from a value entred in the SMC (or API) or an automatically generated IP Address range.
         The format is: x.x.x.x-x.x.x.x; x.x.x.x-x.x.x.x
-        :param list(str) dhcp_client_interfaces: the relay interface IP Addresses used when DHCP Relay is selected.
+        :param list of str dhcp_client_interfaces: the relay interface IP Addresses used when DHCP Relay is selected.
         :param list(DHPCServer) dhcp_servers: the DHCP Servers for Direct mode.
         :param bool proxy_arg_enabled: flag to tell if arp entry addresses can be used.
         :param str proxy_arp_address_list: Only usefull if the proxy_arg_enabled flag is set to true.

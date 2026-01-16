@@ -170,6 +170,19 @@ class System(SubElement):
                                  resource="unlock_source_ip_account",
                                  params=params)
 
+
+    def browse_trash_bin(self, filter=None):
+        """
+        Browse system level trash bin
+
+        :param str filter: filter to search by name
+        :raises ActionCommandFailed: failure to retrieve resource
+        :return: list of dict items related to trashed elements
+        """
+        return self.make_request(
+            resource="browse_trash_bin", params={"filter": filter}
+        )
+
     def empty_trash_bin(self):
         """
         Empty system level trash bin
@@ -598,7 +611,8 @@ class System(SubElement):
             filename="export_ldif_elements.zip",
             timeout=5,
             max_tries=36,
-            ldap_domain=None
+            ldap_domain=None,
+            **kwargs
     ):
         """
         Export internal LDAP elements in LDIF format from SMC.
@@ -613,6 +627,8 @@ class System(SubElement):
 
         if ldap_domain is not None and is_smc_version_more_than_or_equal("7.3"):
             params["ldap_domain"] = ldap_domain
+        if kwargs:
+            params.update(**kwargs)
 
         return Task.download(
             self,
@@ -623,7 +639,7 @@ class System(SubElement):
             max_tries=max_tries
         )
 
-    def import_ldif_elements(self, filename, ldap_domain=None):
+    def import_ldif_elements(self, filename, ldap_domain=None, **kwargs):
         """
         Import LDIF elements into SMC. Specify the fully qualified path
         to the import ldif file.
@@ -638,6 +654,8 @@ class System(SubElement):
 
         if ldap_domain is not None and is_smc_version_more_than_or_equal("7.3"):
             params["ldap_domain"] = ldap_domain
+        if kwargs:
+            params.update(**kwargs)
 
         import_ldif_follower = Task(
             self.make_request(
@@ -674,7 +692,7 @@ class System(SubElement):
         """
         self.make_request(method="delete", resource="active_alerts_ack_all")
 
-    def import_elements(self, import_file, import_only_new=False, restoration=True, timeout= None, file_password=None):
+    def import_elements(self, import_file, import_only_new=False, restoration=True, timeout=None, file_password=None):
         """
         Import elements into SMC. Specify the fully qualified path
         to the import file.
@@ -987,13 +1005,22 @@ class System(SubElement):
         """
         json = {}
         if filter:
+            resolved = element_resolver(filter)
+            if not resolved:
+                raise ValueError(f"Filter not found: {filter}")
             if isinstance(filter, list):
-                json.update(values=element_resolver(filter))
+                json["values"] = resolved
             else:
-                json.update(value=element_resolver(filter))
-        return [ConnectivityRow(cr) for cr in
-                self.make_request(CreateElementFailed, method="create",
-                                  resource="connectivity_monitoring", json=json)]
+                json["value"] = resolved
+        response = self.make_request(
+            CreateElementFailed,
+            method="create",
+            resource="connectivity_monitoring",
+            json=json
+        )
+        if response is None:
+            return []
+        return [ConnectivityRow(cr) for cr in response]
 
 
 class SystemSnapshot(Element):
